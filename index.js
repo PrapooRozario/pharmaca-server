@@ -19,15 +19,25 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-      const productsCollection = client.db("Pharmaca").collection("Products");
-      
+    const productsCollection = client.db("Pharmaca").collection("Products");
+
     //  Products Discount API
-    app.get("/products/discount", async (req, res) => {
+    app.get("/products/discounted", async (req, res) => {
       const result = await productsCollection
         .find({ discountPercentage: { $gt: 0 } })
-            .toArray();
+        .toArray();
       res.status(200).send(result);
     });
+
+    // Recommended Products API
+    app.get("/products/recommended", async (req, res) => {
+      const result = await productsCollection
+        .find({ discountPercentage: { $eq: 0 } })
+        .limit(6)
+        .toArray();
+      res.status(200).send(result);
+    });
+
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
