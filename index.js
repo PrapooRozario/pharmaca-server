@@ -38,6 +38,13 @@ async function run() {
   try {
     const productsCollection = client.db("Pharmaca").collection("Products");
     const usersCollection = client.db("Pharmaca").collection("Users");
+
+    // Get All Products API
+    app.get("/products", async (req, res) => {
+      const result = await productsCollection.find().toArray();
+      res.status(200).send(result);
+    });
+
     //  Products Discount API
     app.get("/products/discounted", async (req, res) => {
       const result = await productsCollection
@@ -75,6 +82,10 @@ async function run() {
       res.status(200).send(token);
     });
 
+    app.get("/products/total", async(req, res) => {
+      const total = await productsCollection.estimatedDocumentCount();
+      res.status(200).send({ total });
+    });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
