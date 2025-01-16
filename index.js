@@ -1,13 +1,14 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.qgpkx.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+const uri = `mongodb+srv://albart2022:albart_2024@cluster0.qgpkx.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -17,11 +18,26 @@ const client = new MongoClient(uri, {
   },
 });
 
+const verifyToken = (req, res, next) => {
+  const token = req?.headers?.authorization?.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).send({ message: "No token provided" });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET_TOKEN, (err, decoded) => {
+    if (err) {
+      return res.status(403).send({ message: "Failed to authenticate token" });
+    }
+    req.user = decoded;
+    next();
+  });
+};
+
 async function run() {
   try {
     const productsCollection = client.db("Pharmaca").collection("Products");
     const usersCollection = client.db("Pharmaca").collection("Users");
-
     //  Products Discount API
     app.get("/products/discounted", async (req, res) => {
       const result = await productsCollection
@@ -48,6 +64,15 @@ async function run() {
       if (existingUser) return;
       const result = await usersCollection.insertOne(user);
       res.status(201).send(result);
+    });
+
+    // JWT API
+    app.post("/jwt", async (req, res) => {
+      const user = req?.body;
+      const token = jwt.sign(user, process.env.JWT_SECRET_TOKEN, {
+        expiresIn: "1d",
+      });
+      res.status(200).send(token);
     });
 
     console.log(
