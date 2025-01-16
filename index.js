@@ -20,6 +20,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     const productsCollection = client.db("Pharmaca").collection("Products");
+    const usersCollection = client.db("Pharmaca").collection("Users");
 
     //  Products Discount API
     app.get("/products/discounted", async (req, res) => {
@@ -36,6 +37,17 @@ async function run() {
         .limit(6)
         .toArray();
       res.status(200).send(result);
+    });
+
+    // Users API
+    app.post("/users", async (req, res) => {
+      const user = req?.body;
+      const existingUser = await usersCollection.findOne({
+        email: user?.email,
+      });
+      if (existingUser) return;
+      const result = await usersCollection.insertOne(user);
+      res.status(201).send(result);
     });
 
     console.log(
