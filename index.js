@@ -131,6 +131,13 @@ async function run() {
             $unwind: "$productDetails",
           },
           {
+            $addFields: {
+              totalPrice: {
+                $multiply: ["$quantity", "$productDetails.perUnitPrice"],
+              },
+            },
+          },
+          {
             $project: {
               username: 1,
               email: 1,
@@ -140,6 +147,7 @@ async function run() {
               perUnitPrice: "$productDetails.perUnitPrice",
               discountPercentage: "$productDetails.discountPercentage",
               company: "$productDetails.company",
+              totalPrice: 1,
             },
           },
         ])
@@ -159,9 +167,17 @@ async function run() {
       res.status(200).send(result);
     });
 
+    app.put("/products/cart/:id", async (req, res) => {
+      const { quantity } = req?.body;
+      const result = await cartsCollection.updateOne(
+        { _id: new ObjectId(req?.params?.id) },
+        {
+          $inc: { quantity: quantity },
+        }
+      );
 
-
-
+      res.status(200).send(result);
+    });
 
     // Category API
     app.get("/products/categories", async (req, res) => {
