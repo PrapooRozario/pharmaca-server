@@ -20,7 +20,6 @@ const client = new MongoClient(uri, {
 
 const verifyToken = (req, res, next) => {
   const token = req?.headers?.authorization?.split(" ")[1];
-  console.log(token);
   if (!token) {
     return res.status(401).send({ message: "No token provided" });
   }
@@ -39,6 +38,7 @@ async function run() {
     const productsCollection = client.db("Pharmaca").collection("Products");
     const usersCollection = client.db("Pharmaca").collection("Users");
     const cartsCollection = client.db("Pharmaca").collection("Carts");
+    const categoryCollection = client.db("Pharmaca").collection("Categories");
 
     // Get All Products API
     app.get("/products", async (req, res) => {
@@ -47,10 +47,12 @@ async function run() {
       const sort = req.query.sort;
       const search = {
         $or: [
-          { itemName: { $regex: req.query.search, $options: "i" } },
-          { company: { $regex: req.query.search, $options: "i" } },
-          { itemGenericName: { $regex: req.query.search, $options: "i" } },
-          { category: { $regex: req.query.search, $options: "i" } },
+          { itemName: { $regex: req.query.search || "", $options: "i" } },
+          { company: { $regex: req.query.search || "", $options: "i" } },
+          {
+            itemGenericName: { $regex: req.query.search || "", $options: "i" },
+          },
+          { category: { $regex: req.query.search || "", $options: "i" } },
         ],
       };
       const result = await productsCollection
@@ -106,6 +108,20 @@ async function run() {
           .status(400)
           .send({ message: "Product already exists in your cart." });
       }
+    });
+
+    // Category API
+    app.get("/products/categories", async (req, res) => {
+      const result = await categoryCollection.find().toArray();
+      res.status(200).send(result);
+    });
+
+    app.get("/products/category/:category", async (req, res) => {
+      const category = req?.params?.category;
+      const result = await productsCollection
+        .find({ category: category })
+        .toArray();
+      res.status(200).send(result);
     });
 
     // Users API
