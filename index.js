@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
@@ -146,6 +146,22 @@ async function run() {
         .toArray();
       res.status(200).json(result);
     });
+
+    app.delete("/products/carts/:id", verifyToken, async (req, res) => {
+      const email = req?.user?.email;
+      if (email !== req?.query?.email)
+        return res.status(403).send({ message: "Forbidden" });
+      const cartProductId = req?.params?.id;
+      const result = await cartsCollection.deleteOne({
+        _id: new ObjectId(cartProductId),
+      });
+
+      res.status(200).send(result);
+    });
+
+
+
+
 
     // Category API
     app.get("/products/categories", async (req, res) => {
