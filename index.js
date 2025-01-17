@@ -41,8 +41,35 @@ async function run() {
 
     // Get All Products API
     app.get("/products", async (req, res) => {
-      const result = await productsCollection.find().toArray();
-      res.status(200).send(result);
+      const limit = parseInt(req.query.limit) || 10;
+      const page = parseInt(req.query.skip) || 1;
+      const sort = req.query.sort;
+      const search = {
+        $or: [
+          { itemName: { $regex: req.query.search, $options: "i" } },
+          { company: { $regex: req.query.search, $options: "i" } },
+          { itemGenericName: { $regex: req.query.search, $options: "i" } },
+          { category: { $regex: req.query.search, $options: "i" } },
+        ],
+      };
+      const result = await productsCollection
+        .find(search)
+        .limit(limit)
+        .skip(page)
+        .sort(
+          sort === "desc"
+            ? { perUnitPrice: -1 }
+            : sort === "asc"
+            ? { perUnitPrice: 1 }
+            : {}
+        )
+        .toArray();
+      const productsCount = await productsCollection.countDocuments(search);
+      res.status(200).json({
+        products: result,
+        productsCount: productsCount,
+      });
+      console.log(productsCount);
     });
 
     //  Products Discount API
@@ -82,10 +109,6 @@ async function run() {
       res.status(200).send(token);
     });
 
-    app.get("/products/total", async(req, res) => {
-      const total = await productsCollection.estimatedDocumentCount();
-      res.status(200).send({ total });
-    });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
