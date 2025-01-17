@@ -20,7 +20,7 @@ const client = new MongoClient(uri, {
 
 const verifyToken = (req, res, next) => {
   const token = req?.headers?.authorization?.split(" ")[1];
-
+  console.log(token);
   if (!token) {
     return res.status(401).send({ message: "No token provided" });
   }
@@ -38,6 +38,7 @@ async function run() {
   try {
     const productsCollection = client.db("Pharmaca").collection("Products");
     const usersCollection = client.db("Pharmaca").collection("Users");
+    const cartsCollection = client.db("Pharmaca").collection("Carts");
 
     // Get All Products API
     app.get("/products", async (req, res) => {
@@ -69,7 +70,6 @@ async function run() {
         products: result,
         productsCount: productsCount,
       });
-      console.log(productsCount);
     });
 
     //  Products Discount API
@@ -89,15 +89,40 @@ async function run() {
       res.status(200).send(result);
     });
 
+    // Products Cart API
+    app.post("/products/carts", verifyToken, async (req, res) => {
+      const cart = req?.body;
+      if (req?.user?.email !== cart?.email)
+        return res.status(403).send({ message: "Forbidden" });
+      const result = await cartsCollection.updateOne(
+        { $and: [{ productId: cart?.productId }, { email: cart?.email }] },
+        { $setOnInsert: cart },
+        { upsert: true }
+      );
+      if (result.upsertedCount > 0) {
+        res.status(201).send(result);
+      } else {
+        res
+          .status(400)
+          .send({ message: "Product already exists in your cart." });
+      }
+    });
+
     // Users API
     app.post("/users", async (req, res) => {
       const user = req?.body;
-      const existingUser = await usersCollection.findOne({
-        email: user?.email,
-      });
-      if (existingUser) return;
-      const result = await usersCollection.insertOne(user);
-      res.status(201).send(result);
+      const result = await usersCollection.updateOne(
+        {
+          email: user?.email,
+        },
+        { $setOnInsert: user },
+        { upsert: true }
+      );
+      if (result?.upsertedCount > 0) {
+        res.status(201).send(result);
+      } else {
+        res.status(400).send({ message: "User already exists" });
+      }
     });
 
     // JWT API
