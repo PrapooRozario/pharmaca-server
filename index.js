@@ -110,6 +110,43 @@ async function run() {
       }
     });
 
+    app.get("/products/carts", verifyToken, async (req, res) => {
+      const email = req?.user?.email;
+      if (email !== req?.query?.email)
+        return res.status(403).send({ message: "Forbidden" });
+      const result = await cartsCollection
+        .aggregate([
+          {
+            $match: { email: email },
+          },
+          {
+            $lookup: {
+              from: "Products",
+              localField: "productId",
+              foreignField: "_id",
+              as: "productDetails",
+            },
+          },
+          {
+            $unwind: "$productDetails",
+          },
+          {
+            $project: {
+              username: 1,
+              email: 1,
+              productId: 1,
+              quantity: 1,
+              itemName: "$productDetails.itemName",
+              perUnitPrice: "$productDetails.perUnitPrice",
+              discountPercentage: "$productDetails.discountPercentage",
+              company: "$productDetails.company",
+            },
+          },
+        ])
+        .toArray();
+      res.status(200).json(result);
+    });
+
     // Category API
     app.get("/products/categories", async (req, res) => {
       const result = await categoryCollection.find().toArray();
