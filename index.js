@@ -259,7 +259,7 @@ async function run() {
     });
 
     // Dashboard Statistics
-    app.get("/dashboard/statistics", async (req, res) => {
+    app.get("/dashboard/statistics", verifyToken, async (req, res) => {
       const totalOrders = await paymentsCollection.estimatedDocumentCount();
       const totalPending = await paymentsCollection.countDocuments({
         status: "pending",
@@ -268,6 +268,24 @@ async function run() {
         status: "paid",
       });
       res.status(200).send({ totalOrders, totalPending, totalPaid });
+    });
+
+    // All Users
+    app.get("/users", verifyToken, async (req, res) => {
+      const users = await usersCollection.find().toArray();
+      res.status(200).send(users);
+    });
+
+    // Users role API
+    app.patch("/users/:email", verifyToken, async (req, res) => {
+      if (req?.user?.email !== req?.params?.email)
+        return res.status(403).send({ message: "Forbidden" });
+      const { role, email: user_email } = req?.body;
+      const result = await usersCollection.updateOne(
+        { email: user_email },
+        { $set: { role: role } }
+      );
+      res.status(201).send(result);
     });
 
     // JWT API
