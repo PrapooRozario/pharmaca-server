@@ -205,13 +205,45 @@ async function run() {
       res.status(200).send(result);
     });
 
+    // Post Category API
+    app.post("/products/categories", verifyToken, async (req, res) => {
+      const { newData } = req?.body;
+      const result = await categoryCollection.insertOne(newData);
+      res.status(201).send(result);
+    });
+
     // Category API
     app.get("/products/categories", async (req, res) => {
       const result = await categoryCollection.find().toArray();
       res.status(200).send(result);
     });
 
-    app.get("/products/category/:category", async (req, res) => {
+    // Delete Category API
+    app.delete("/products/categories/:id", verifyToken, async (req, res) => {
+      const result = await categoryCollection.deleteOne({
+        _id: new ObjectId(req?.params?.id),
+      });
+      res.status(200).send(result);
+    });
+
+    //  Update Category API
+    app.patch("/products/categories/:id", async (req, res) => {
+      const { updatedData } = req?.body;
+      console.log(updatedData);
+      const result = await categoryCollection.updateOne(
+        { _id: new ObjectId(req?.params?.id) },
+        {
+          $set: {
+            categoryImage: updatedData?.categoryImage,
+            categoryName: updatedData?.categoryName,
+          },
+        }
+      );
+      res.status(201).send(result);
+    });
+
+    // Get Category wise Products API
+    app.get("/products/category/:category", verifyToken, async (req, res) => {
       const category = req?.params?.category;
       const result = await productsCollection
         .find({ category: category })
