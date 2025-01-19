@@ -236,6 +236,7 @@ async function run() {
       }
     });
 
+    //  Stripe Payment
     app.post("/create-payment-intent", verifyToken, async (req, res) => {
       const { amount } = req.body;
       try {
@@ -249,11 +250,24 @@ async function run() {
         res.status(500).send({ error: error.message });
       }
     });
+
     // Payments API
     app.post("/products/payments", verifyToken, async (req, res) => {
       const paymentDetails = req?.body;
       const result = await paymentsCollection.insertOne(paymentDetails);
       res.status(201).send(result);
+    });
+
+    // Dashboard Statistics
+    app.get("/dashboard/statistics", async (req, res) => {
+      const totalOrders = await paymentsCollection.estimatedDocumentCount();
+      const totalPending = await paymentsCollection.countDocuments({
+        status: "pending",
+      });
+      const totalPaid = await paymentsCollection.countDocuments({
+        status: "paid",
+      });
+      res.status(200).send({ totalOrders, totalPending, totalPaid });
     });
 
     // JWT API
