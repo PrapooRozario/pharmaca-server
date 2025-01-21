@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const moment = require("moment");
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
@@ -288,6 +289,69 @@ async function run() {
       const paymentDetails = req?.body;
       const result = await paymentsCollection.insertOne(paymentDetails);
       res.status(201).send(result);
+    });
+
+    app.get("/products/payments", verifyToken, async (req, res) => {
+      const result = await paymentsCollection.find().toArray();
+      res.status(200).send(result);
+    });
+
+    app.patch("/products/payments/:id", verifyToken, async (req, res) => {
+      const result = await paymentsCollection.updateOne(
+        { _id: new ObjectId(req?.params?.id) },
+        { $set: { status: "paid" } }
+      );
+      res.status(201).send(result);
+    });
+
+    app.get("/products/sales", async (req, res) => {
+      const startDate =
+        req?.query?.startDate && new Date(req?.query?.startDate).toISOString();
+      const endDate =
+        req?.query?.endDate && new Date(req?.query?.endDate).toISOString();
+      const sales = await paymentsCollection
+        .aggregate([
+          {
+            $match: {
+              createdAt: {
+                $gte: startDate || "1970-01-01T00:00:00Z",
+                $lte: endDate || new Date().toISOString(),
+              },
+            },
+          },
+          {
+            $lookup: {
+              from: "Products",
+              localField: "productIds",
+              foreignField: "_id",
+              as: "product",
+            },
+          },
+          {
+            $unwind: "$product",
+          },
+          {
+            $addFields: {
+              productPrice: {
+                $arrayElemAt: [
+                  "$productPrices",
+                  { $indexOfArray: ["$productIds", "$product._id"] },
+                ],
+              },
+            },
+          },
+          {
+            $project: {
+              "product.itemName": 1,
+              email: 1,
+              status: 1,
+              productPrice: 1,
+              "product.email": 1,
+            },
+          },
+        ])
+        .toArray();
+      res.send(sales);
     });
 
     // Dashboard Statistics
