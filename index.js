@@ -20,6 +20,13 @@ const client = new MongoClient(uri, {
   },
 });
 
+const usersCollection = client.db("Pharmaca").collection("Users");
+const productsCollection = client.db("Pharmaca").collection("Products");
+const cartsCollection = client.db("Pharmaca").collection("Carts");
+const categoryCollection = client.db("Pharmaca").collection("Categories");
+const paymentsCollection = client.db("Pharmaca").collection("Payments");
+const bannersCollection = client.db("Pharmaca").collection("Banners");
+
 const verifyToken = (req, res, next) => {
   const token = req?.headers?.authorization?.split(" ")[1];
   if (!token) {
@@ -35,14 +42,16 @@ const verifyToken = (req, res, next) => {
   });
 };
 
+const verifyAdmin = async (req, res, next) => {
+  const user = await usersCollection.findOne({ email: req?.user?.email });
+  if (user?.role !== "admin") {
+    return res.status(403).send({ message: "Forbidden" });
+  }
+  next();
+};
+
 async function run() {
   try {
-    const productsCollection = client.db("Pharmaca").collection("Products");
-    const usersCollection = client.db("Pharmaca").collection("Users");
-    const cartsCollection = client.db("Pharmaca").collection("Carts");
-    const categoryCollection = client.db("Pharmaca").collection("Categories");
-    const paymentsCollection = client.db("Pharmaca").collection("Payments");
-
     // Get All Products API
     app.get("/products", async (req, res) => {
       const limit = parseInt(req.query.limit) || 10;
@@ -199,7 +208,7 @@ async function run() {
       res.status(200).send(result);
     });
     //  Delete User All Carts
-    app.delete("/products/carts", async (req, res) => {
+    app.delete("/products/carts", verifyToken, async (req, res) => {
       const result = await cartsCollection.deleteMany({
         email: req?.query?.email,
       });
@@ -220,28 +229,38 @@ async function run() {
     });
 
     // Delete Category API
-    app.delete("/products/categories/:id", verifyToken, async (req, res) => {
-      const result = await categoryCollection.deleteOne({
-        _id: new ObjectId(req?.params?.id),
-      });
-      res.status(200).send(result);
-    });
+    app.delete(
+      "/products/categories/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const result = await categoryCollection.deleteOne({
+          _id: new ObjectId(req?.params?.id),
+        });
+        res.status(200).send(result);
+      }
+    );
 
     //  Update Category API
-    app.patch("/products/categories/:id", async (req, res) => {
-      const { updatedData } = req?.body;
-      console.log(updatedData);
-      const result = await categoryCollection.updateOne(
-        { _id: new ObjectId(req?.params?.id) },
-        {
-          $set: {
-            categoryImage: updatedData?.categoryImage,
-            categoryName: updatedData?.categoryName,
-          },
-        }
-      );
-      res.status(201).send(result);
-    });
+    app.patch(
+      "/products/categories/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { updatedData } = req?.body;
+        console.log(updatedData);
+        const result = await categoryCollection.updateOne(
+          { _id: new ObjectId(req?.params?.id) },
+          {
+            $set: {
+              categoryImage: updatedData?.categoryImage,
+              categoryName: updatedData?.categoryName,
+            },
+          }
+        );
+        res.status(201).send(result);
+      }
+    );
 
     // Get Category wise Products API
     app.get("/products/category/:category", verifyToken, async (req, res) => {
@@ -296,15 +315,20 @@ async function run() {
       res.status(200).send(result);
     });
 
-    app.patch("/products/payments/:id", verifyToken, async (req, res) => {
-      const result = await paymentsCollection.updateOne(
-        { _id: new ObjectId(req?.params?.id) },
-        { $set: { status: "paid" } }
-      );
-      res.status(201).send(result);
-    });
+    app.patch(
+      "/products/payments/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const result = await paymentsCollection.updateOne(
+          { _id: new ObjectId(req?.params?.id) },
+          { $set: { status: "paid" } }
+        );
+        res.status(201).send(result);
+      }
+    );
 
-    app.get("/products/sales", async (req, res) => {
+    app.get("/products/sales", verifyToken, verifyAdmin, async (req, res) => {
       const startDate =
         req?.query?.startDate && new Date(req?.query?.startDate).toISOString();
       const endDate =
@@ -351,29 +375,120 @@ async function run() {
           },
         ])
         .toArray();
-      res.send(sales);
+      res.status(200).send(sales);
+    });
+
+    app.get("/products/banners", verifyToken, verifyAdmin, async (req, res) => {
+      const result = await bannersCollection.find().toArray();
+      res.status(200).send(result);
     });
 
     // Dashboard Statistics
-    app.get("/dashboard/statistics", verifyToken, async (req, res) => {
-      const totalOrders = await paymentsCollection.estimatedDocumentCount();
-      const totalPending = await paymentsCollection.countDocuments({
-        status: "pending",
-      });
-      const totalPaid = await paymentsCollection.countDocuments({
-        status: "paid",
-      });
-      res.status(200).send({ totalOrders, totalPending, totalPaid });
+    app.get("/dashboard/admin/statistics", async (req, res) => {
+      const result = await paymentsCollection
+        .aggregate([
+          {
+            $lookup: {
+              from: "Products",
+              localField: "productIds",
+              foreignField: "_id",
+              as: "product",
+            },
+          },
+          {
+            $project: {
+              status: 1,
+              totalAmount: 1,
+            },
+          },
+          {
+            $group: {
+              _id: "$status",
+              totalAmount: { $sum: "$totalAmount" },
+            },
+          },
+        ])
+        .toArray();
+
+      const totalPendingAmount = result
+        ?.filter((res) => res?._id === "pending")
+        .reduce((acc, curr) => acc + curr.totalAmount, 0);
+
+      const totalPaidAmount = result
+        ?.filter((res) => res?._id === "paid")
+        .reduce((acc, curr) => acc + curr.totalAmount, 0);
+
+      res.status(200).send({ totalPendingAmount, totalPaidAmount });
+    });
+
+    // Dashboard Seller Statistics
+    app.get("/dashboard/seller/statistics/:email", async (req, res) => {
+      const email = req?.params?.email;
+      const result = await paymentsCollection
+        .aggregate([
+          {
+            $lookup: {
+              from: "Products",
+              localField: "productIds",
+              foreignField: "_id",
+              as: "product",
+            },
+          },
+          {
+            $unwind: "$product",
+          },
+          {
+            $match: {
+              "product.email": email,
+            },
+          },
+          {
+            $project: {
+              productIds: 1,
+              productPrices: 1,
+              status: 1,
+            },
+          },
+          {
+            $addFields: {
+              price: {
+                $let: {
+                  vars: {
+                    index: { $indexOfArray: ["$productIds", "$product._id"] },
+                  },
+                  in: {
+                    $arrayElemAt: ["$productPrices", "$$index"],
+                  },
+                },
+              },
+            },
+          },
+          {
+            $group: {
+              _id: "$status",
+              totalAmount: { $sum: "$price" },
+            },
+          },
+        ])
+        .toArray();
+      const totalPendingAmount = result
+        ?.filter((res) => res?._id === "pending")
+        .reduce((acc, curr) => acc + curr.totalAmount, 0);
+
+      const totalPaidAmount = result
+        ?.filter((res) => res?._id === "paid")
+        .reduce((acc, curr) => acc + curr.totalAmount, 0);
+      res.status(200).send({ totalPendingAmount, totalPaidAmount });
     });
 
     // All Users
-    app.get("/users", verifyToken, async (req, res) => {
+    app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
       const users = await usersCollection.find().toArray();
       res.status(200).send(users);
     });
 
     // Users role API
-    app.patch("/users/:email", verifyToken, async (req, res) => {
+    app.patch("/users/:email", verifyToken, verifyAdmin, async (req, res) => {
       if (req?.user?.email !== req?.params?.email)
         return res.status(403).send({ message: "Forbidden" });
       const { role, email: user_email } = req?.body;
@@ -382,6 +497,26 @@ async function run() {
         { $set: { role: role } }
       );
       res.status(201).send(result);
+    });
+
+    // Check Admin
+    app.get("/admin/:email", verifyToken, async (req, res) => {
+      if (req?.user?.email !== req?.params?.email)
+        return res.status(403).send({ message: "Forbidden" });
+      let admin = false;
+      const user = await usersCollection.findOne({ email: req?.params?.email });
+      admin = user?.role === "admin";
+      res.status(200).send({ admin });
+    });
+
+    // Check seller
+    app.get("/seller/:email", verifyToken, async (req, res) => {
+      if (req?.user?.email !== req?.params?.email)
+        return res.status(403).send({ message: "Forbidden" });
+      let seller = false;
+      const user = await usersCollection.findOne({ email: req?.params?.email });
+      seller = user?.role === "seller";
+      res.status(200).send({ seller });
     });
 
     // JWT API
