@@ -190,6 +190,7 @@ async function run() {
         return {
           productId: cart.productId,
           quantity: cart.quantity,
+          itemImage: product?.itemImage,
           itemName: product?.itemName || "Unknown",
           perUnitPrice,
           discountPercentage: product?.discountPercentage || 0,
@@ -334,6 +335,29 @@ async function run() {
       res.status(200).send(result);
     });
 
+    app.get("/products/payments/me/:email", verifyToken, async (req, res) => {
+      const email = req?.user?.email;
+      if (email !== req?.params?.email)
+        return res.status(403).send({ message: "Forbidden" });
+      const payments = await paymentsCollection
+        .aggregate([
+          {
+            $match: { email: email },
+          },
+          {
+            $project: {
+              status: 1,
+              transactionId: 1,
+              totalPrice: 1,
+              createdAt: 1,
+              totalAmount: 1,
+            },
+          },
+        ])
+        .toArray();
+      res.status(200).send(payments);
+    });
+
     app.patch(
       "/products/payments/:id",
       verifyToken,
@@ -459,7 +483,6 @@ async function run() {
           { $setOnInsert: banner },
           { upsert: true }
         );
-        console.log(result);
         if (result?.upsertedCount > 0) {
           res.status(201).send(result);
         } else {
@@ -474,7 +497,6 @@ async function run() {
       verifyAdmin,
       async (req, res) => {
         const { id, status } = req?.body;
-        console.log(id, status);
         const result = await bannersCollection.updateOne(
           {
             _id: new ObjectId(id),
@@ -668,7 +690,6 @@ async function run() {
       const totalPaidAmount = result
         ?.filter((res) => res?._id === "paid")
         .reduce((acc, curr) => acc + curr.totalAmount, 0);
-      console.log(totalPendingAmount, totalPaidAmount);
       res.status(200).send({ totalPendingAmount, totalPaidAmount });
     });
 
