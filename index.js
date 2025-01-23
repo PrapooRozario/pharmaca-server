@@ -55,7 +55,8 @@ async function run() {
     // Get All Products API
     app.get("/products", async (req, res) => {
       const limit = parseInt(req.query.limit) || 10;
-      const page = parseInt(req.query.skip) || 1;
+      const page = parseInt(req.query.page) || 1;
+      const skip = (page - 1) * limit;
       const sort = req.query.sort;
       const search = {
         $or: [
@@ -70,7 +71,7 @@ async function run() {
       const result = await productsCollection
         .find(search)
         .limit(limit)
-        .skip(page)
+        .skip(skip)
         .sort(
           sort === "desc"
             ? { perUnitPrice: -1 }
@@ -84,6 +85,38 @@ async function run() {
         products: result,
         productsCount: productsCount,
       });
+    });
+
+    app.post("/products", verifyToken, async (req, res) => {
+      const product = req?.body?.newData;
+      const result = await productsCollection.updateOne(
+        {
+          $and: [
+            { itemName: product?.itemName },
+            { shortDescription: product?.shortDescription },
+          ],
+        },
+        { $setOnInsert: product },
+        {
+          upsert: true,
+        }
+      );
+      if (result.upsertedCount > 0) {
+        res.status(201).send(result);
+      } else {
+        res
+          .status(400)
+          .send({ message: "Product already exists in your shop." });
+      }
+    });
+
+    app.get("/products/dashboard/:email", verifyToken, async (req, res) => {
+      const result = await productsCollection
+        .find({
+          email: req?.params?.email,
+        })
+        .toArray();
+      res.status(200).send(result);
     });
 
     //  Products Discount API
@@ -121,64 +154,38 @@ async function run() {
           .send({ message: "Product already exists in your cart." });
       }
     });
+
     //  User Product Carts with More Details
     app.get("/products/carts", verifyToken, async (req, res) => {
-      const email = req?.user?.email;
-      if (email !== req?.query?.email)
+      const email = req?.query?.email;
+      if (req?.user?.email !== email)
         return res.status(403).send({ message: "Forbidden" });
-      const result = await cartsCollection
-        .aggregate([
-          {
-            $match: { email: email },
-          },
-          {
-            $lookup: {
-              from: "Products",
-              localField: "productId",
-              foreignField: "_id",
-              as: "productDetails",
-            },
-          },
-          {
-            $unwind: "$productDetails",
-          },
-          {
-            $addFields: {
-              totalPrice: {
-                $multiply: ["$quantity", "$productDetails.perUnitPrice"],
-              },
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              allProducts: {
-                $push: {
-                  productId: "$productDetails._id",
-                  quantity: "$quantity",
-                  itemName: "$productDetails.itemName",
-                  perUnitPrice: "$productDetails.perUnitPrice",
-                  discountPercentage: "$productDetails.discountPercentage",
-                  company: "$productDetails.company",
-                  _id: "$_id",
-                  totalPrice: "$totalPrice",
-                },
-              },
-              totalCartPrice: {
-                $sum: "$totalPrice",
-              },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              totalCartPrice: 1,
-              allProducts: 1,
-            },
-          },
-        ])
+      const carts = await cartsCollection.find({ email: email }).toArray();
+      const productIds = carts.map((cart) => cart?.productId);
+      const products = await productsCollection
+        .find({
+          _id: { $in: productIds.map((id) => new ObjectId(id)) },
+        })
         .toArray();
-      res.status(200).json(result[0]);
+      let totalCartPrice = 0;
+      const allProducts = carts.map((cart) => {
+        const product = products.find((p) => p._id.equals(cart.productId));
+        const perUnitPrice = product?.perUnitPrice || 0;
+        const totalPrice = cart.quantity * perUnitPrice;
+        totalCartPrice += totalPrice;
+
+        return {
+          productId: cart.productId,
+          quantity: cart.quantity,
+          itemName: product?.itemName || "Unknown",
+          perUnitPrice,
+          discountPercentage: product?.discountPercentage || 0,
+          company: product?.company || "Unknown",
+          _id: cart._id,
+          totalPrice,
+        };
+      });
+      res.status(200).json({ allProducts, totalCartPrice });
     });
 
     //  Delete Cart
@@ -248,7 +255,6 @@ async function run() {
       verifyAdmin,
       async (req, res) => {
         const { updatedData } = req?.body;
-        console.log(updatedData);
         const result = await categoryCollection.updateOne(
           { _id: new ObjectId(req?.params?.id) },
           {
