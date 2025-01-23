@@ -389,7 +389,12 @@ async function run() {
               productPrice: {
                 $arrayElemAt: [
                   "$productPrices",
-                  { $indexOfArray: ["$productIds", "$product._id"] },
+                  {
+                    $indexOfArray: [
+                      "$productIds",
+                      { $toString: "$product._id" },
+                    ],
+                  },
                 ],
               },
             },
@@ -405,14 +410,83 @@ async function run() {
           },
         ])
         .toArray();
-      console.log(sales);
       res.status(200).send(sales);
     });
 
-    app.get("/products/banners", verifyToken, verifyAdmin, async (req, res) => {
-      const result = await bannersCollection.find().toArray();
+    app.get(
+      "/products/banners/admin",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const result = await bannersCollection.find().toArray();
+        res.status(200).send(result);
+      }
+    );
+
+    app.get(
+      "/products/banners/seller/:email",
+      verifyToken,
+      verifySeller,
+      async (req, res) => {
+        const result = await bannersCollection
+          .find({ email: req?.params?.email })
+          .toArray();
+        res.status(200).send(result);
+      }
+    );
+
+    app.get("/products/banners", async (req, res) => {
+      const result = await bannersCollection
+        .find({ status: "active" })
+        .limit(10)
+        .toArray();
       res.status(200).send(result);
     });
+
+    app.post(
+      "/products/banners",
+      verifyToken,
+      verifySeller,
+      async (req, res) => {
+        const banner = req?.body;
+        const result = await bannersCollection.updateOne(
+          {
+            $or: [
+              { bannerName: banner?.bannerName },
+              { description: banner?.description },
+            ],
+          },
+          { $setOnInsert: banner },
+          { upsert: true }
+        );
+        console.log(result);
+        if (result?.upsertedCount > 0) {
+          res.status(201).send(result);
+        } else {
+          res.status(400).send({ message: "Banner already exists" });
+        }
+      }
+    );
+
+    app.patch(
+      "/products/banners",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { id, status } = req?.body;
+        console.log(id, status);
+        const result = await bannersCollection.updateOne(
+          {
+            _id: new ObjectId(id),
+          },
+          {
+            $set: { status: status },
+          }
+        );
+
+        res.status(201).send(result);
+      }
+    );
 
     // Dashboard Statistics
     app.get("/dashboard/admin/statistics", async (req, res) => {
