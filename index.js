@@ -50,6 +50,14 @@ const verifyAdmin = async (req, res, next) => {
   next();
 };
 
+const verifySeller = async (req, res, next) => {
+  const user = await usersCollection.findOne({ email: req?.user?.email });
+  if (user?.role !== "seller") {
+    return res.status(403).send({ message: "Forbidden" });
+  }
+  next();
+};
+
 async function run() {
   try {
     // Get All Products API
@@ -87,7 +95,7 @@ async function run() {
       });
     });
 
-    app.post("/products", verifyToken, async (req, res) => {
+    app.post("/products", verifyToken, verifySeller, async (req, res) => {
       const product = req?.body?.newData;
       const result = await productsCollection.updateOne(
         {
@@ -110,14 +118,19 @@ async function run() {
       }
     });
 
-    app.get("/products/dashboard/:email", verifyToken, async (req, res) => {
-      const result = await productsCollection
-        .find({
-          email: req?.params?.email,
-        })
-        .toArray();
-      res.status(200).send(result);
-    });
+    app.get(
+      "/products/dashboard/:email",
+      verifyToken,
+      verifySeller,
+      async (req, res) => {
+        const result = await productsCollection
+          .find({
+            email: req?.params?.email,
+          })
+          .toArray();
+        res.status(200).send(result);
+      }
+    );
 
     //  Products Discount API
     app.get("/products/discounted", async (req, res) => {
@@ -350,9 +363,20 @@ async function run() {
             },
           },
           {
+            $addFields: {
+              productObjectIds: {
+                $map: {
+                  input: "$productIds",
+                  as: "productId",
+                  in: { $toObjectId: "$$productId" },
+                },
+              },
+            },
+          },
+          {
             $lookup: {
               from: "Products",
-              localField: "productIds",
+              localField: "productObjectIds",
               foreignField: "_id",
               as: "product",
             },
@@ -381,6 +405,7 @@ async function run() {
           },
         ])
         .toArray();
+      console.log(sales);
       res.status(200).send(sales);
     });
 
@@ -427,15 +452,25 @@ async function run() {
       res.status(200).send({ totalPendingAmount, totalPaidAmount });
     });
 
-    // Dashboard Seller Statistics
-    app.get("/dashboard/seller/statistics/:email", async (req, res) => {
+    app.get("/products/payments/seller/:email", async (req, res) => {
       const email = req?.params?.email;
       const result = await paymentsCollection
         .aggregate([
           {
+            $addFields: {
+              productObjectIds: {
+                $map: {
+                  input: "$productIds",
+                  as: "productId",
+                  in: { $toObjectId: "$$productId" },
+                },
+              },
+            },
+          },
+          {
             $lookup: {
               from: "Products",
-              localField: "productIds",
+              localField: "productObjectIds",
               foreignField: "_id",
               as: "product",
             },
@@ -453,6 +488,10 @@ async function run() {
               productIds: 1,
               productPrices: 1,
               status: 1,
+              product: 1,
+              productObjectIds: 1,
+              username: 1,
+              email: 1,
             },
           },
           {
@@ -460,7 +499,78 @@ async function run() {
               price: {
                 $let: {
                   vars: {
-                    index: { $indexOfArray: ["$productIds", "$product._id"] },
+                    index: {
+                      $indexOfArray: ["$productObjectIds", "$product._id"],
+                    },
+                  },
+                  in: {
+                    $arrayElemAt: ["$productPrices", "$$index"],
+                  },
+                },
+              },
+            },
+          },
+          {
+            $group: {
+              _id: "$status",
+              totalAmount: { $sum: "$price" },
+              buyer: { $push: { username: "$username", email: "$email" } },
+            },
+          },
+        ])
+        .toArray();
+      res.status(200).send(result);
+    });
+
+    // Dashboard Seller Statistics
+    app.get("/dashboard/seller/statistics/:email", async (req, res) => {
+      const email = req?.params?.email;
+      const result = await paymentsCollection
+        .aggregate([
+          {
+            $addFields: {
+              productObjectIds: {
+                $map: {
+                  input: "$productIds",
+                  as: "productId",
+                  in: { $toObjectId: "$$productId" },
+                },
+              },
+            },
+          },
+          {
+            $lookup: {
+              from: "Products",
+              localField: "productObjectIds",
+              foreignField: "_id",
+              as: "product",
+            },
+          },
+          {
+            $unwind: "$product",
+          },
+          {
+            $match: {
+              "product.email": email,
+            },
+          },
+          {
+            $project: {
+              productIds: 1,
+              productPrices: 1,
+              status: 1,
+              product: 1,
+              productObjectIds: 1,
+            },
+          },
+          {
+            $addFields: {
+              price: {
+                $let: {
+                  vars: {
+                    index: {
+                      $indexOfArray: ["$productObjectIds", "$product._id"],
+                    },
                   },
                   in: {
                     $arrayElemAt: ["$productPrices", "$$index"],
@@ -484,6 +594,7 @@ async function run() {
       const totalPaidAmount = result
         ?.filter((res) => res?._id === "paid")
         .reduce((acc, curr) => acc + curr.totalAmount, 0);
+      console.log(totalPendingAmount, totalPaidAmount);
       res.status(200).send({ totalPendingAmount, totalPaidAmount });
     });
 
