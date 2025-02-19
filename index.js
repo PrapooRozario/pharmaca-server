@@ -26,6 +26,7 @@ const cartsCollection = client.db("Pharmaca").collection("Carts");
 const categoryCollection = client.db("Pharmaca").collection("Categories");
 const paymentsCollection = client.db("Pharmaca").collection("Payments");
 const bannersCollection = client.db("Pharmaca").collection("Banners");
+const reviewsCollection = client.db("Pharmaca").collection("Reviews");
 
 const verifyToken = (req, res, next) => {
   const token = req?.headers?.authorization?.split(" ")[1];
@@ -693,9 +694,23 @@ async function run() {
       res.status(200).send({ totalPendingAmount, totalPaidAmount });
     });
 
+    // All Reviews
+    app.get("/reviews", async (req, res) => {
+      const result = await reviewsCollection.find().toArray();
+      res.status(200).send(result);
+    });
+
     // All Users
     app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
-      const users = await usersCollection.find().toArray();
+      const email = req?.query?.email || "";
+      const users = await usersCollection.find({ email: email }).toArray();
+      res.status(200).send(users);
+    });
+
+    // Single Users
+    app.get("/users/:email", verifyToken, async (req, res) => {
+      const email = req?.params?.email || "";
+      const users = await usersCollection.findOne({ email: email });
       res.status(200).send(users);
     });
 
@@ -707,6 +722,18 @@ async function run() {
       const result = await usersCollection.updateOne(
         { email: user_email },
         { $set: { role: role } }
+      );
+      res.status(201).send(result);
+    });
+
+    // Users role API
+    app.patch("/users/:email", verifyToken, async (req, res) => {
+      if (req?.user?.email !== req?.params?.email)
+        return res.status(403).send({ message: "Forbidden" });
+      const { username, photo } = req?.body;
+      const result = await usersCollection.updateOne(
+        { email: user_email },
+        { $set: { username: username, photo: photo } }
       );
       res.status(201).send(result);
     });
