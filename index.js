@@ -10,7 +10,7 @@ app.use(express.json());
 app.use(cors());
 const stripe = require("stripe")(process.env.PAYMENT_SECRET_KEY);
 
-const uri = `mongodb+srv://albart2022:albart_2024@cluster0.qgpkx.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+const uri = `${process.env.MONGO_URI}`;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -430,6 +430,7 @@ async function run() {
               email: 1,
               status: 1,
               productPrice: 1,
+
               "product.email": 1,
             },
           },
@@ -703,7 +704,7 @@ async function run() {
     // All Users
     app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
       const email = req?.query?.email || "";
-      const users = await usersCollection.find({ email: email }).toArray();
+      const users = await usersCollection.find().toArray();
       res.status(200).send(users);
     });
 
