@@ -100,7 +100,7 @@ JWT_SECRET_TOKEN="your-jwt-secret-key"
 In the /pharmaca-server directory, you can run:
 
 nodemon index.js
-Runs the development server using Vite.
+Runs the development server using Nodemon.
 
 vercel --prod
 Deploy the server for production.
